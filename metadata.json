@@ -1,0 +1,7 @@
+{
+  "name": "LensFocus: Photographer Studio Manager",
+  "description": "A high-end professional studio management app for photographers to track shoot finances, equipment expenses, and project deadlines.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
