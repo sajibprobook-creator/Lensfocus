@@ -3,13 +3,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Moment Chronicles Studio Manager</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
+        :root {
+          --sat: env(safe-area-inset-top);
+          --sar: env(safe-area-inset-right);
+          --sab: env(safe-area-inset-bottom);
+          --sal: env(safe-area-inset-left);
+        }
         body { 
           font-family: 'Plus Jakarta Sans', sans-serif; 
           background-color: #F1F4FA; 
@@ -17,6 +23,12 @@
           overflow-x: hidden;
           -webkit-tap-highlight-color: transparent;
           touch-action: manipulation;
+          padding-top: var(--sat);
+          padding-left: var(--sal);
+          padding-right: var(--sar);
+        }
+        .pb-safe {
+          padding-bottom: var(--sab);
         }
         ::-webkit-scrollbar {
           width: 8px;

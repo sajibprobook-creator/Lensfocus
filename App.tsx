@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AppView, Transaction, Project, Budget, SavingsGoal, LifeEvent, Task, Client, Professional, SavedInvoice, UserProfile, TransactionType } from './types';
+import { AppView, Transaction, Project, Budget, SavingsGoal, LifeEvent, Task, Client, Professional, SavedInvoice, UserProfile, TransactionType, ProjectStatus, ProjectType, TaskStatus } from './types';
 import Sidebar from './components/Sidebar';
+import MobileNav from './components/MobileNav';
 import Dashboard from './components/Dashboard';
 import FinanceTracker from './components/FinanceTracker';
 import AIAssistant from './components/AIAssistant';
@@ -32,23 +33,27 @@ const DEFAULT_LOGO = `data:image/svg+xml;base64,${btoa(`
 </svg>
 `)}`;
 
-// Fallback for random UUID in non-secure contexts
 export const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  return Math.random().toString(36).substring(2, 15);
 };
+
+// Global safety for process.env
+if (typeof window !== 'undefined') {
+  (window as any).process = (window as any).process || { env: {} };
+}
 
 const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [isBooting, setIsBooting] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [showTroubleshoot, setShowTroubleshoot] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [activeView, setActiveView] = useState<AppView>('DASHBOARD');
   const [language, setLanguage] = useState<'EN' | 'BN'>('BN');
   const [dbError, setDbError] = useState<string | null>(null);
-  const [showTroubleshoot, setShowTroubleshoot] = useState(false);
   
   const [projects, setProjects] = useState<Project[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -61,18 +66,12 @@ const App: React.FC = () => {
   const [invoices, setInvoices] = useState<SavedInvoice[]>([]);
   const [logo, setLogo] = useState<string | undefined>(DEFAULT_LOGO);
 
-  const initTimeoutRef = useRef<any>(null);
-
   const fetchUserData = useCallback(async (userId: string) => {
-    console.log("[System] Fetching user data for:", userId);
+    if (isSyncing) return;
+    setIsSyncing(true);
     try {
-      setDbError(null);
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
+      // 1. Fetch Profile
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
       if (profile) {
         setUserProfile({
           ownerName: profile.owner_name || '',
@@ -84,6 +83,7 @@ const App: React.FC = () => {
         setLogo(profile.logo_url || DEFAULT_LOGO);
       }
 
+      // 2. Parallel fetch for all other entities (Non-blocking)
       const results = await Promise.allSettled([
         supabase.from('projects').select('*').order('created_at', { ascending: false }),
         supabase.from('transactions').select('*').order('date', { ascending: false }),
@@ -94,26 +94,12 @@ const App: React.FC = () => {
         supabase.from('invoices').select('*').order('created_at', { ascending: false }),
         supabase.from('savings_goals').select('*').order('created_at', { ascending: false })
       ]);
-
+      
       results.forEach((res, idx) => {
-        if (res.status === 'fulfilled') {
-          const payload = res.value as { data: any[] | null, error: any };
-          const data = payload.data;
-          if (!data) return;
-
+        if (res.status === 'fulfilled' && res.value.data) {
+          const { data } = res.value;
           switch(idx) {
-            case 0: setProjects(data.map((p: any) => ({ 
-              id: p.id,
-              title: p.title,
-              client: p.client,
-              clientPhone: p.client_phone,
-              location: p.location,
-              type: p.type,
-              status: p.status,
-              totalValue: p.total_value,
-              payments: p.payments || [],
-              date: p.date
-            }))); break;
+            case 0: setProjects(data.map((p: any) => ({ ...p, payments: p.payments || [] }))); break;
             case 1: setTransactions(data); break;
             case 2: setTasks(data); break;
             case 3: setEvents(data.map((e: any) => ({ ...e, clientName: e.client_name, clientPhone: e.client_phone }))); break;
@@ -124,81 +110,62 @@ const App: React.FC = () => {
           }
         }
       });
-    } catch (e) {
-      console.error("[System] Data sync error:", e);
-      setDbError("Database sync failed.");
+    } catch (err) {
+      console.warn("[System] background sync limited:", err);
+    } finally {
+      setIsSyncing(false);
     }
   }, []);
 
   useEffect(() => {
-    const initializeAuth = async () => {
-      console.log("[System] Initializing Auth...");
-      
-      initTimeoutRef.current = setTimeout(() => {
-        console.warn("[System] Auth taking too long, showing troubleshoot...");
-        setShowTroubleshoot(true);
-      }, 7000);
+    const checkSession = async () => {
+      // Timeout promise to ensure loading screen doesn't hang forever
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('timeout')), 2500)
+      );
 
       try {
-        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+        // Race the auth check against a 2.5s timer
+        const { data: { session: currentSession } } = await Promise.race([
+          supabase.auth.getSession(),
+          timeoutPromise
+        ]) as any;
         
-        if (sessionError) throw sessionError;
-
-        setSession(initialSession);
-        if (initialSession) {
-          await fetchUserData(initialSession.user.id);
+        setSession(currentSession);
+        if (currentSession) {
+          fetchUserData(currentSession.user.id);
         }
       } catch (err) {
-        console.error("[System] Auth init failed:", err);
-        setDbError("Authentication service unreachable.");
+        console.warn("[System] session check timed out or failed, bypassing...");
       } finally {
-        setAuthLoading(false);
-        setIsInitializing(false);
-        if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current);
+        setIsBooting(false);
       }
     };
 
-    initializeAuth();
+    checkSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      console.log("[System] Auth state changed:", event);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
-      if (newSession) {
-        await fetchUserData(newSession.user.id);
-      } else {
-        setUserProfile(null);
-        setProjects([]); setTransactions([]); setEvents([]);
-      }
-      setAuthLoading(false);
-      setIsInitializing(false);
+      if (newSession) fetchUserData(newSession.user.id);
+      setIsBooting(false);
     });
 
     const savedLang = localStorage.getItem('omni_track_lang');
     if (savedLang === 'EN' || savedLang === 'BN') setLanguage(savedLang);
 
+    // Troubleshoot visibility timer (longer than boot race)
+    const tTimer = setTimeout(() => setShowTroubleshoot(true), 5000);
+
     return () => {
       subscription.unsubscribe();
-      if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current);
+      clearTimeout(tTimer);
     };
   }, [fetchUserData]);
 
-  const handleLogout = async () => {
-    try {
-      setAuthLoading(true);
-      await supabase.auth.signOut();
-      localStorage.removeItem('supabase.auth.token');
-      setSession(null);
-      setUserProfile(null);
-      setActiveView('DASHBOARD');
-    } catch (e) {
-      console.error("[System] Logout error:", e);
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleReset = () => {
+  const handleReset = async () => {
+    try { await supabase.auth.signOut(); } catch (e) {}
     localStorage.clear();
+    sessionStorage.clear();
     window.location.reload();
   };
 
@@ -208,58 +175,23 @@ const App: React.FC = () => {
     localStorage.setItem('omni_track_lang', next);
   };
 
-  const handleSetLogo = async (newLogo: string) => {
-    setLogo(newLogo || DEFAULT_LOGO);
-    if (session) {
-      await supabase.from('profiles').update({ logo_url: newLogo }).eq('id', session.user.id);
-    }
-  };
-
-  const handleAddTransaction = async (t: Omit<Transaction, 'id'>) => {
-    if (!session) return;
-    const { data, error } = await supabase.from('transactions').insert([{ 
-      amount: t.amount,
-      type: t.type,
-      category: t.category,
-      date: t.date,
-      description: t.description,
-      currency: t.currency,
-      user_id: session.user.id,
-      project_id: t.projectId 
-    }]).select();
-    
-    if (!error && data) fetchUserData(session.user.id);
-  };
-
-  const handleDeleteTransaction = async (id: string) => {
-    if (!session) return;
-    const { error } = await supabase.from('transactions').delete().eq('id', id);
-    if (!error) fetchUserData(session.user.id);
-  };
-
-  if (authLoading || isInitializing) {
+  if (isBooting) {
     return (
-      <div className="min-h-screen bg-[#F1F4FA] flex items-center justify-center p-6">
-        <div className="flex flex-col items-center gap-6 text-center max-w-xs">
+      <div className="min-h-screen bg-[#F1F4FA] flex items-center justify-center p-8">
+        <div className="flex flex-col items-center gap-8 text-center max-w-sm">
           <div className="relative">
-            <div className="w-16 h-16 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin"></div>
+            <div className="w-16 h-16 border-4 border-indigo-600/10 border-t-indigo-600 rounded-full animate-spin"></div>
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="w-2 h-2 bg-indigo-600 rounded-full animate-ping"></div>
             </div>
           </div>
-          <div className="space-y-2">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest animate-pulse">
-              {language === 'BN' ? 'সিস্টেম সিঙ্ক হচ্ছে...' : 'Syncing Identity...'}
+          <div className="space-y-4">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] animate-pulse">
+              {language === 'BN' ? 'সিস্টেম লোড হচ্ছে...' : 'Loading Workspace...'}
             </p>
             {showTroubleshoot && (
-              <div className="animate-in fade-in slide-in-from-bottom-2 duration-1000">
-                <p className="text-[9px] font-bold text-slate-400 mb-4">
-                  {language === 'BN' ? 'সংযোগ ধীর মনে হচ্ছে?' : 'Connection taking longer than expected?'}
-                </p>
-                <button 
-                  onClick={handleReset}
-                  className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-colors"
-                >
+              <div className="animate-in fade-in slide-in-from-bottom-4 duration-1000 bg-white p-6 rounded-[2rem] card-shadow border border-slate-100">
+                <button onClick={handleReset} className="w-full px-6 py-3 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all">
                   {language === 'BN' ? 'সেশন রিসেট করুন' : 'Reset Session'}
                 </button>
               </div>
@@ -276,7 +208,8 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#F1F4FA] text-slate-900 pb-24 lg:pb-12 font-sans selection:bg-indigo-200 flex flex-col transition-all overflow-x-hidden">
-      <Sidebar activeView={activeView} setActiveView={setActiveView} language={language} toggleLanguage={toggleLanguage} onLogout={handleLogout} />
+      <Sidebar activeView={activeView} setActiveView={setActiveView} language={language} toggleLanguage={toggleLanguage} onLogout={handleReset} />
+      <MobileNav activeView={activeView} setActiveView={setActiveView} language={language} toggleLanguage={toggleLanguage} onLogout={handleReset} />
       
       {dbError && (
         <div className="bg-amber-50 border-b border-amber-100 text-amber-700 px-6 py-2 text-[9px] font-black uppercase tracking-widest text-center animate-in slide-in-from-top duration-500">
@@ -299,19 +232,31 @@ const App: React.FC = () => {
             {activeView === 'TASKS' && <TaskManager tasks={tasks} setTasks={setTasks} language={language} />}
             {activeView === 'CLIENTS' && <ClientDatabase clients={clients} setClients={setClients} language={language} />}
             {activeView === 'TEAM' && <ProfessionalDatabase professionals={professionals} setProfessionals={setProfessionals} language={language} />}
-            {activeView === 'FINANCE' && <FinanceTracker transactions={transactions} projects={projects} onAdd={handleAddTransaction} onDelete={handleDeleteTransaction} language={language} />}
-            {activeView === 'INVOICES' && <InvoiceMaker projects={projects} clients={clients} invoices={invoices} setInvoices={setInvoices} language={language} logo={logo} setLogo={handleSetLogo} />}
+            {activeView === 'FINANCE' && <FinanceTracker transactions={transactions} projects={projects} onAdd={async (t) => {
+              const { data, error } = await supabase.from('transactions').insert([{ ...t, user_id: session.user.id, project_id: t.projectId }]).select();
+              if (!error && data) fetchUserData(session.user.id);
+            }} onDelete={async (id) => {
+              await supabase.from('transactions').delete().eq('id', id);
+              fetchUserData(session.user.id);
+            }} language={language} />}
+            {activeView === 'INVOICES' && <InvoiceMaker projects={projects} clients={clients} invoices={invoices} setInvoices={setInvoices} language={language} logo={logo} setLogo={setLogo} />}
             {activeView === 'REPORTS' && <ReportsManager transactions={transactions} projects={projects} savings={savings} events={events} language={language} />}
             {activeView === 'AI_ASSISTANT' && <AIAssistant transactions={transactions} projects={projects} language={language} />}
-            {activeView === 'PROFILE' && <ProfileView userProfile={userProfile} setUserProfile={setUserProfile} logo={logo} setLogo={handleSetLogo} language={language} onLogout={handleLogout} projectsCount={projects.length} teamCount={professionals.length} />}
+            {activeView === 'PROFILE' && <ProfileView userProfile={userProfile} setUserProfile={setUserProfile} logo={logo} setLogo={setLogo} language={language} onLogout={handleReset} projectsCount={projects.length} teamCount={professionals.length} />}
           </div>
-
-          <footer className="mt-12 md:mt-20 py-8 border-t border-slate-200/60 text-center no-print px-4">
+          
+          <footer className="mt-12 md:mt-20 py-8 border-t border-slate-200/60 text-center no-print px-4 flex flex-col items-center gap-2">
+            {isSyncing && (
+              <div className="flex items-center gap-2 mb-4 bg-white px-3 py-1.5 rounded-full border border-slate-100 shadow-sm animate-bounce">
+                <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-pulse"></div>
+                <span className="text-[8px] font-black uppercase text-indigo-600 tracking-widest">{language === 'BN' ? 'সিঙ্ক হচ্ছে...' : 'Syncing...'}</span>
+              </div>
+            )}
             <p className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-relaxed">
               Software crafted by <span className="text-indigo-600">Sajib Roy Dip</span> & <span className="text-pink-500">Google AI Studio</span>
             </p>
-            <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest mt-2">
-              © {new Date().getFullYear()} {userProfile?.studioName || 'Moment Chronicles'} System
+            <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">
+              © {new Date().getFullYear()} {userProfile?.studioName || 'Moment Chronicles'}
             </p>
           </footer>
         </div>
