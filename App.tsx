@@ -70,7 +70,6 @@ const App: React.FC = () => {
     if (isSyncing) return;
     setIsSyncing(true);
     try {
-      // 1. Fetch Profile
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
       if (profile) {
         setUserProfile({
@@ -83,7 +82,6 @@ const App: React.FC = () => {
         setLogo(profile.logo_url || DEFAULT_LOGO);
       }
 
-      // 2. Parallel fetch for all other entities (Non-blocking)
       const results = await Promise.allSettled([
         supabase.from('projects').select('*').order('created_at', { ascending: false }),
         supabase.from('transactions').select('*').order('date', { ascending: false }),
@@ -119,13 +117,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkSession = async () => {
-      // Timeout promise to ensure loading screen doesn't hang forever
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('timeout')), 2500)
       );
 
       try {
-        // Race the auth check against a 2.5s timer
         const { data: { session: currentSession } } = await Promise.race([
           supabase.auth.getSession(),
           timeoutPromise
@@ -136,7 +132,7 @@ const App: React.FC = () => {
           fetchUserData(currentSession.user.id);
         }
       } catch (err) {
-        console.warn("[System] session check timed out or failed, bypassing...");
+        console.warn("[System] session check bypassed...");
       } finally {
         setIsBooting(false);
       }
@@ -153,7 +149,6 @@ const App: React.FC = () => {
     const savedLang = localStorage.getItem('omni_track_lang');
     if (savedLang === 'EN' || savedLang === 'BN') setLanguage(savedLang);
 
-    // Troubleshoot visibility timer (longer than boot race)
     const tTimer = setTimeout(() => setShowTroubleshoot(true), 5000);
 
     return () => {
@@ -177,26 +172,12 @@ const App: React.FC = () => {
 
   if (isBooting) {
     return (
-      <div className="min-h-screen bg-[#F1F4FA] flex items-center justify-center p-8">
-        <div className="flex flex-col items-center gap-8 text-center max-w-sm">
-          <div className="relative">
-            <div className="w-16 h-16 border-4 border-indigo-600/10 border-t-indigo-600 rounded-full animate-spin"></div>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-2 h-2 bg-indigo-600 rounded-full animate-ping"></div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] animate-pulse">
-              {language === 'BN' ? 'সিস্টেম লোড হচ্ছে...' : 'Loading Workspace...'}
-            </p>
-            {showTroubleshoot && (
-              <div className="animate-in fade-in slide-in-from-bottom-4 duration-1000 bg-white p-6 rounded-[2rem] card-shadow border border-slate-100">
-                <button onClick={handleReset} className="w-full px-6 py-3 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all">
-                  {language === 'BN' ? 'সেশন রিসেট করুন' : 'Reset Session'}
-                </button>
-              </div>
-            )}
-          </div>
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-8">
+        <div className="flex flex-col items-center gap-6 text-center max-w-sm">
+          <div className="w-12 h-12 border-4 border-indigo-600/10 border-t-indigo-600 rounded-full animate-spin"></div>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest animate-pulse">
+            {language === 'BN' ? 'সিস্টেম লোড হচ্ছে...' : 'Loading Workspace...'}
+          </p>
         </div>
       </div>
     );
@@ -207,19 +188,13 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F1F4FA] text-slate-900 pb-24 lg:pb-12 font-sans selection:bg-indigo-200 flex flex-col transition-all overflow-x-hidden">
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-100 flex flex-col transition-all overflow-x-hidden">
       <Sidebar activeView={activeView} setActiveView={setActiveView} language={language} toggleLanguage={toggleLanguage} onLogout={handleReset} />
       <MobileNav activeView={activeView} setActiveView={setActiveView} language={language} toggleLanguage={toggleLanguage} onLogout={handleReset} />
       
-      {dbError && (
-        <div className="bg-amber-50 border-b border-amber-100 text-amber-700 px-6 py-2 text-[9px] font-black uppercase tracking-widest text-center animate-in slide-in-from-top duration-500">
-          ⚠️ {dbError}
-        </div>
-      )}
-
-      <main className="flex-1 w-full max-w-[1920px] mx-auto overflow-hidden">
-        <div className="px-4 py-6 md:px-12 lg:px-24 xl:px-44">
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <main className="flex-1 w-full max-w-[1600px] mx-auto overflow-hidden">
+        <div className="px-4 py-6 md:px-8 lg:px-24 xl:px-44 pb-safe">
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
             {activeView === 'DASHBOARD' && <Dashboard projects={projects} transactions={transactions} budgets={budgets} savings={savings} tasks={tasks} events={events} setActiveView={setActiveView} language={language} userProfile={userProfile} />}
             {activeView === 'PROJECTS' && <ProjectManager projects={projects} setProjects={setProjects} language={language} />}
             {activeView === 'EVENTS' && <EventTracker events={events} onAdd={async (e) => {
@@ -245,18 +220,9 @@ const App: React.FC = () => {
             {activeView === 'PROFILE' && <ProfileView userProfile={userProfile} setUserProfile={setUserProfile} logo={logo} setLogo={setLogo} language={language} onLogout={handleReset} projectsCount={projects.length} teamCount={professionals.length} />}
           </div>
           
-          <footer className="mt-12 md:mt-20 py-8 border-t border-slate-200/60 text-center no-print px-4 flex flex-col items-center gap-2">
-            {isSyncing && (
-              <div className="flex items-center gap-2 mb-4 bg-white px-3 py-1.5 rounded-full border border-slate-100 shadow-sm animate-bounce">
-                <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-pulse"></div>
-                <span className="text-[8px] font-black uppercase text-indigo-600 tracking-widest">{language === 'BN' ? 'সিঙ্ক হচ্ছে...' : 'Syncing...'}</span>
-              </div>
-            )}
-            <p className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-relaxed">
-              Software crafted by <span className="text-indigo-600">Sajib Roy Dip</span> & <span className="text-pink-500">Google AI Studio</span>
-            </p>
-            <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">
-              © {new Date().getFullYear()} {userProfile?.studioName || 'Moment Chronicles'}
+          <footer className="mt-12 md:mt-20 py-8 border-t border-slate-100 text-center no-print flex flex-col items-center gap-2">
+            <p className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-60">
+              Software crafted by <span className="text-indigo-600">Sajib Roy Dip</span>
             </p>
           </footer>
         </div>

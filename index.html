@@ -18,69 +18,73 @@
         }
         body { 
           font-family: 'Plus Jakarta Sans', sans-serif; 
-          background-color: #F1F4FA; 
-          color: #1A1C1E;
+          background-color: #F8FAFC; 
+          color: #0F172A;
           overflow-x: hidden;
           -webkit-tap-highlight-color: transparent;
           touch-action: manipulation;
           padding-top: var(--sat);
           padding-left: var(--sal);
           padding-right: var(--sar);
+          text-rendering: optimizeLegibility;
+          -webkit-font-smoothing: antialiased;
         }
         .pb-safe {
-          padding-bottom: var(--sab);
+          padding-bottom: calc(var(--sab) + 4rem);
+        }
+        @media (min-width: 1024px) {
+          .pb-safe { padding-bottom: 2rem; }
         }
         ::-webkit-scrollbar {
-          width: 8px;
+          width: 5px;
         }
         ::-webkit-scrollbar-track {
           background: transparent;
         }
         ::-webkit-scrollbar-thumb {
-          background: #D1D5DB;
+          background: #E2E8F0;
           border-radius: 20px;
-          border: 2px solid #F1F4FA;
         }
         .dashboard-shadow {
-          box-shadow: 0 20px 50px rgba(108, 93, 211, 0.05);
+          box-shadow: 0 10px 40px -10px rgba(79, 70, 229, 0.15);
         }
         .card-shadow {
-          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03);
+          box-shadow: 0 4px 20px -5px rgba(0, 0, 0, 0.05);
         }
         .purple-gradient {
-          background: linear-gradient(135deg, #6C5DD3 0%, #4D3DB5 100%);
+          background: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
         }
         .pink-gradient {
-          background: linear-gradient(135deg, #FF7594 0%, #FF5C7A 100%);
+          background: linear-gradient(135deg, #f43f5e 0%, #be123c 100%);
         }
         .glass-dark {
-          background: rgba(255, 255, 255, 0.1);
-          backdrop-filter: blur(10px);
+          background: rgba(255, 255, 255, 0.15);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
         }
         .pill-radius {
-          border-radius: 2.5rem;
+          border-radius: 2rem;
         }
-        .mobile-pill-radius {
-          border-radius: 1.75rem;
-        }
-        .dropdown-animate {
-          animation: slideUp 0.2s ease-out;
-        }
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes slideInUp {
-          from { transform: translateY(100%); }
-          to { transform: translateY(0); }
+        @media (max-width: 640px) {
+          .pill-radius { border-radius: 1.5rem; }
+          h2 { font-size: 1.5rem !important; }
         }
         .bottom-sheet-animate {
           animation: slideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        /* Mobile Specific Overrides */
-        @media (max-width: 640px) {
-          .pill-radius { border-radius: 2rem; }
-          .container-padding { padding-left: 1.25rem; padding-right: 1.25rem; }
+        @keyframes slideInUp {
+          from { transform: translateY(100%); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .active-tap {
+          transition: transform 0.1s ease-out;
+        }
+        .active-tap:active {
+          transform: scale(0.96);
+        }
+        /* Fix for mobile keyboard push */
+        @media screen and (max-height: 450px) {
+          .no-kb-show { display: none; }
         }
     </style>
 <script type="importmap">
