@@ -21,12 +21,14 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ transactions, projects, langu
       greet: "Hello. I am Omni. How can I assist your business growth today?",
       placeholder: 'Type your query...',
       aiPersona: "freelance cinematography studio business expert",
+      error: "AI is currently offline or API key is missing."
     },
     BN: {
       title: 'স্টুডিও অ্যাডভাইজার', desc: 'মোমেন্ট ক্রনিকলসের জন্য এআই বুদ্ধিমত্তা।',
       greet: "হ্যালো। আমি ওমনি। আজ আপনার ব্যবসায়িক বৃদ্ধিতে কীভাবে সাহায্য করতে পারি?",
       placeholder: 'আপনার প্রশ্ন লিখুন...',
       aiPersona: "ফ্রিল্যান্স সিনেমাটোগ্রাফি স্টুডিও ব্যবসায়িক বিশেষজ্ঞ",
+      error: "এআই বর্তমানে অফলাইন বা এপিআই কী নেই।"
     }
   }[language];
 
@@ -39,17 +41,29 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ transactions, projects, langu
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
+
+    // Safety check for process.env
+    const apiKey = typeof process !== 'undefined' && process.env ? process.env.API_KEY : null;
+    
+    if (!apiKey) {
+      setMessages(prev => [...prev, { role: 'ai', text: t.error }]);
+      return;
+    }
+
     const userMsg = input;
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setLoading(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-      const prompt = `Context: Projects: ${JSON.stringify(projects)}. Ledger: ${JSON.stringify(transactions)}. User: ${userMsg}. Persona: ${t.aiPersona}. Reply in ${language === 'BN' ? 'Bengali' : 'English'}. Keep it concise and professional. Use markdown for lists if needed.`;
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `Context: Projects: ${JSON.stringify(projects.slice(0,5))}. Ledger: ${JSON.stringify(transactions.slice(0,10))}. User: ${userMsg}. Persona: ${t.aiPersona}. Reply in ${language === 'BN' ? 'Bengali' : 'English'}. Keep it concise and professional. Use markdown for lists if needed.`;
       const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
       setMessages(prev => [...prev, { role: 'ai', text: response.text || "..." }]);
-    } catch (e) { setMessages(prev => [...prev, { role: 'ai', text: "Connection error." }]); }
+    } catch (e) { 
+      console.error("AI Assistant Error:", e);
+      setMessages(prev => [...prev, { role: 'ai', text: "Connection error." }]); 
+    }
     finally { setLoading(false); }
   };
 

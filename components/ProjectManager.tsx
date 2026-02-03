@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { Project, ProjectStatus, ProjectType } from '../types';
+import { generateId } from '../App';
 
 interface ProjectManagerProps {
   projects: Project[];
@@ -29,7 +30,17 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ projects, setProjects, 
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
-    const project: Project = { ...(newProject as Project), id: crypto.randomUUID(), payments: [] };
+    const project: Project = { 
+      id: generateId(),
+      title: newProject.title || '',
+      client: newProject.client || '',
+      clientPhone: newProject.clientPhone,
+      location: newProject.location,
+      type: newProject.type || ProjectType.PHOTO,
+      status: newProject.status || ProjectStatus.QUOTED,
+      totalValue: newProject.totalValue || 0,
+      payments: []
+    };
     setProjects(prev => [project, ...prev]);
     setShowAdd(false);
     setNewProject({ title: '', client: '', clientPhone: '', location: '', type: ProjectType.PHOTO, status: ProjectStatus.QUOTED, totalValue: 0, payments: [] });

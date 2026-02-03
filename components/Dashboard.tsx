@@ -1,13 +1,13 @@
 
 import React, { useMemo } from 'react';
-import { Transaction, Project, TransactionType, AppView, ProjectStatus, Task, TaskStatus, LifeEvent, UserProfile } from '../types';
+import { Transaction, Project, TransactionType, AppView, ProjectStatus, Task, TaskStatus, LifeEvent, UserProfile, Budget, SavingsGoal } from '../types';
 import { AreaChart, Area, Tooltip, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 
 interface DashboardProps {
   projects: Project[];
   transactions: Transaction[];
-  budgets: any[];
-  savings: any[];
+  budgets: Budget[];
+  savings: SavingsGoal[];
   tasks: Task[];
   events: LifeEvent[];
   setActiveView: (view: AppView) => void;
@@ -64,10 +64,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, transactions, tasks, ev
   const stats = useMemo(() => {
     const now = new Date();
     const currentMonthStr = now.toISOString().slice(0, 7);
-    const prevMonthDate = new Date();
-    prevMonthDate.setMonth(now.getMonth() - 1);
-    const prevMonthStr = prevMonthDate.toISOString().slice(0, 7);
-
+    
     const currentTrans = transactions.filter(t => t.date.startsWith(currentMonthStr));
     const income = currentTrans.filter(t => t.type === TransactionType.INCOME).reduce((sum, t) => sum + t.amount, 0);
     const expense = currentTrans.filter(t => t.type === TransactionType.EXPENSE).reduce((sum, t) => sum + t.amount, 0);

@@ -12,6 +12,14 @@ interface ReportsManagerProps {
   language: 'EN' | 'BN';
 }
 
+interface ReportItem {
+  id: string;
+  title: string;
+  type: string;
+  client: string;
+  totalValue?: number;
+}
+
 const ReportsManager: React.FC<ReportsManagerProps> = ({ transactions, projects, savings, events, language }) => {
   const [rangeType, setRangeType] = useState<'MONTHLY' | 'HALF_YEAR' | 'CUSTOM'>('MONTHLY');
   const [customStart, setCustomStart] = useState(new Date().toISOString().split('T')[0]);
@@ -71,10 +79,27 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ transactions, projects,
     const periodEvents = events.filter(e => e.date >= startStr && e.date <= endStr);
     const totalSavings = savings.reduce((sum, s) => sum + s.current, 0);
 
+    const mergedList: ReportItem[] = [
+      ...periodProjects.map(p => ({ 
+        id: p.id, 
+        title: p.title, 
+        type: 'Project', 
+        client: p.client, 
+        totalValue: p.totalValue 
+      })),
+      ...periodEvents.map(e => ({ 
+        id: e.id, 
+        title: e.title, 
+        type: 'Event', 
+        client: e.clientName || 'Guest' 
+      }))
+    ];
+
     return {
       income, expense, profit: income - expense, savings: totalSavings,
-      workCount: periodProjects.length + periodEvents.length,
-      startStr, endStr, projects: periodProjects, events: periodEvents
+      workCount: mergedList.length,
+      startStr, endStr, 
+      items: mergedList
     };
   }, [transactions, projects, savings, events, rangeType, customStart, customEnd]);
 
@@ -132,9 +157,9 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ transactions, projects,
 
          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8">
             {[
-              { label: t.income, value: reportData.income, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-              { label: t.expense, value: reportData.expense, color: 'text-pink-600', bg: 'bg-pink-50' },
-              { label: t.profit, value: reportData.profit, color: 'text-lime-600', bg: 'bg-lime-50' },
+              { label: t.income, value: reportData.income, color: 'text-indigo-600', bg: 'bg-indigo-50', isMoney: true },
+              { label: t.expense, value: reportData.expense, color: 'text-pink-600', bg: 'bg-pink-50', isMoney: true },
+              { label: t.profit, value: reportData.profit, color: 'text-lime-600', bg: 'bg-lime-50', isMoney: true },
               { label: t.work, value: reportData.workCount, color: 'text-amber-600', bg: 'bg-amber-50', isMoney: false }
             ].map(stat => (
               <div key={stat.label} className={`${stat.bg} p-5 md:p-8 rounded-[1.75rem] md:rounded-[2rem] border border-white/50`}>
@@ -148,7 +173,7 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ transactions, projects,
             <div className="space-y-4 md:space-y-6">
                <h5 className="text-[10px] md:text-[11px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">{t.projectList}</h5>
                <div className="space-y-3">
-                  {[...reportData.projects, ...reportData.events.map(e => ({ id: e.id, title: e.title, type: 'Event', client: e.clientName || 'Guest' }))].slice(0, 8).map((p: any, i) => (
+                  {reportData.items.slice(0, 8).map((p, i) => (
                     <div key={i} className="flex justify-between items-center bg-slate-50/50 p-4 rounded-xl md:rounded-2xl border border-slate-50"><div className="overflow-hidden"><p className="text-xs md:text-sm font-black text-slate-800 truncate">{p.title}</p><p className="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase">{p.client}</p></div>{p.totalValue && <span className="text-[10px] md:text-xs font-black text-indigo-600 ml-2 whitespace-nowrap">৳{p.totalValue.toLocaleString()}</span>}</div>
                   ))}
                </div>

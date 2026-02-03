@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppView, Transaction, Project, Budget, SavingsGoal, LifeEvent, Task, Client, Professional, SavedInvoice, UserProfile, TransactionType } from './types';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -32,13 +32,23 @@ const DEFAULT_LOGO = `data:image/svg+xml;base64,${btoa(`
 </svg>
 `)}`;
 
+// Fallback for random UUID in non-secure contexts
+export const generateId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
+
 const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [activeView, setActiveView] = useState<AppView>('DASHBOARD');
   const [language, setLanguage] = useState<'EN' | 'BN'>('BN');
   const [dbError, setDbError] = useState<string | null>(null);
+  const [showTroubleshoot, setShowTroubleshoot] = useState(false);
   
   const [projects, setProjects] = useState<Project[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -51,7 +61,10 @@ const App: React.FC = () => {
   const [invoices, setInvoices] = useState<SavedInvoice[]>([]);
   const [logo, setLogo] = useState<string | undefined>(DEFAULT_LOGO);
 
+  const initTimeoutRef = useRef<any>(null);
+
   const fetchUserData = useCallback(async (userId: string) => {
+    console.log("[System] Fetching user data for:", userId);
     try {
       setDbError(null);
       const { data: profile, error: profileError } = await supabase
@@ -69,8 +82,6 @@ const App: React.FC = () => {
           role: profile.role || 'Studio Owner'
         });
         setLogo(profile.logo_url || DEFAULT_LOGO);
-      } else if (profileError && profileError.code !== 'PGRST116') {
-        console.warn("Profile fetch issue:", profileError.message);
       }
 
       const results = await Promise.allSettled([
@@ -86,11 +97,23 @@ const App: React.FC = () => {
 
       results.forEach((res, idx) => {
         if (res.status === 'fulfilled') {
-          const { data, error } = res.value;
-          if (error) return;
+          const payload = res.value as { data: any[] | null, error: any };
+          const data = payload.data;
+          if (!data) return;
 
           switch(idx) {
-            case 0: setProjects(data.map((p: any) => ({ ...p, payments: p.payments || [] }))); break;
+            case 0: setProjects(data.map((p: any) => ({ 
+              id: p.id,
+              title: p.title,
+              client: p.client,
+              clientPhone: p.client_phone,
+              location: p.location,
+              type: p.type,
+              status: p.status,
+              totalValue: p.total_value,
+              payments: p.payments || [],
+              date: p.date
+            }))); break;
             case 1: setTransactions(data); break;
             case 2: setTasks(data); break;
             case 3: setEvents(data.map((e: any) => ({ ...e, clientName: e.client_name, clientPhone: e.client_phone }))); break;
@@ -102,58 +125,81 @@ const App: React.FC = () => {
         }
       });
     } catch (e) {
-      console.error("Data sync error:", e);
-      setDbError("Data sync partially failed. Check connection.");
+      console.error("[System] Data sync error:", e);
+      setDbError("Database sync failed.");
     }
   }, []);
 
   useEffect(() => {
     const initializeAuth = async () => {
+      console.log("[System] Initializing Auth...");
+      
+      initTimeoutRef.current = setTimeout(() => {
+        console.warn("[System] Auth taking too long, showing troubleshoot...");
+        setShowTroubleshoot(true);
+      }, 7000);
+
       try {
-        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) throw sessionError;
+
         setSession(initialSession);
         if (initialSession) {
           await fetchUserData(initialSession.user.id);
         }
       } catch (err) {
-        console.error("Auth init error:", err);
+        console.error("[System] Auth init failed:", err);
+        setDbError("Authentication service unreachable.");
       } finally {
         setAuthLoading(false);
+        setIsInitializing(false);
+        if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current);
       }
     };
 
     initializeAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      console.log("[System] Auth state changed:", event);
       setSession(newSession);
       if (newSession) {
         await fetchUserData(newSession.user.id);
       } else {
         setUserProfile(null);
-        // Clear data on logout
         setProjects([]); setTransactions([]); setEvents([]);
       }
       setAuthLoading(false);
+      setIsInitializing(false);
     });
 
     const savedLang = localStorage.getItem('omni_track_lang');
     if (savedLang === 'EN' || savedLang === 'BN') setLanguage(savedLang);
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current);
+    };
   }, [fetchUserData]);
 
   const handleLogout = async () => {
     try {
       setAuthLoading(true);
       await supabase.auth.signOut();
+      localStorage.removeItem('supabase.auth.token');
       setSession(null);
       setUserProfile(null);
       setActiveView('DASHBOARD');
     } catch (e) {
-      console.error("Logout error:", e);
+      console.error("[System] Logout error:", e);
     } finally {
       setAuthLoading(false);
     }
+  };
+
+  const handleReset = () => {
+    localStorage.clear();
+    window.location.reload();
   };
 
   const toggleLanguage = () => {
@@ -191,14 +237,34 @@ const App: React.FC = () => {
     if (!error) fetchUserData(session.user.id);
   };
 
-  if (authLoading) {
+  if (authLoading || isInitializing) {
     return (
-      <div className="min-h-screen bg-[#F1F4FA] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest animate-pulse">
-            {language === 'BN' ? 'সিস্টেম লোড হচ্ছে...' : 'Syncing Identity...'}
-          </p>
+      <div className="min-h-screen bg-[#F1F4FA] flex items-center justify-center p-6">
+        <div className="flex flex-col items-center gap-6 text-center max-w-xs">
+          <div className="relative">
+            <div className="w-16 h-16 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-2 h-2 bg-indigo-600 rounded-full animate-ping"></div>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest animate-pulse">
+              {language === 'BN' ? 'সিস্টেম সিঙ্ক হচ্ছে...' : 'Syncing Identity...'}
+            </p>
+            {showTroubleshoot && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-1000">
+                <p className="text-[9px] font-bold text-slate-400 mb-4">
+                  {language === 'BN' ? 'সংযোগ ধীর মনে হচ্ছে?' : 'Connection taking longer than expected?'}
+                </p>
+                <button 
+                  onClick={handleReset}
+                  className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-colors"
+                >
+                  {language === 'BN' ? 'সেশন রিসেট করুন' : 'Reset Session'}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
